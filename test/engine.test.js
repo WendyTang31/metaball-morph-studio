@@ -1,7 +1,7 @@
 // 纯函数断言(node --test)。只测无 DOM 依赖的引擎/采样层。
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { EASE, buildSequence, makePairs, sampleFrame } from '../src/engine.js';
+import { EASE, buildSequence, makePairs, sampleFrame, fusionSoft } from '../src/engine.js';
 import { SAMPLERS } from '../src/samplers.js';
 import { P } from '../src/config.js';
 
@@ -67,6 +67,38 @@ test('sampleFrame 在过渡端点落回 A/B 位置(错峰=0 时)', () => {
   assert.ok(Math.abs(f0.balls[0].x - .2) < 1e-3, '起点应贴近 A');
   assert.ok(Math.abs(f1.balls[0].x - .8) < 2e-3, '终点应贴近 B');
   P.stag = savedStag; P.amp = savedAmp;
+});
+
+test('融合柔度:关闭=基准软边;开启=中段更宽、端点归零', () => {
+  const base = { soft: 0.12, fusion: 0 };
+  // 关闭:任意 lt 都等于基准
+  for (const lt of [0, 0.25, 0.5, 0.75, 1]) {
+    assert.ok(Math.abs(fusionSoft(base, lt) - 0.12) < 1e-12, `fusion=0 时 lt=${lt} 应为基准`);
+  }
+  const on = { soft: 0.12, fusion: 0.5 };
+  // 端点无缝:lt=0/1 回到基准
+  assert.ok(Math.abs(fusionSoft(on, 0) - 0.12) < 1e-12, '端点应无缝');
+  assert.ok(Math.abs(fusionSoft(on, 1) - 0.12) < 1e-12, '端点应无缝');
+  // 中段最宽,且严格大于端点;抛物线对称
+  const mid = fusionSoft(on, 0.5);
+  assert.ok(mid > fusionSoft(on, 0.25), '中段应比 1/4 处宽');
+  assert.ok(mid > 0.12, '中段应比基准宽');
+  assert.ok(Math.abs(fusionSoft(on, 0.25) - fusionSoft(on, 0.75)) < 1e-12, '应关于中点对称');
+});
+
+test('sampleFrame 每帧带 soft 字段(停留=基准,过渡=融合加成)', () => {
+  const P = { amp: 0, stag: 0, ease: 'smootherstep', freq: 0.4, match: 'sortXY', soft: 0.12, fusion: 0.5 };
+  const states = [
+    { hold: 1, dur: 2, color: '#ffffff', dots: [{ x: .2, y: .5, r: .02 }] },
+    { hold: 0, dur: 2, color: '#ffffff', dots: [{ x: .8, y: .5, r: .02 }] },
+  ];
+  const SEQ = buildSequence(states, false, P);
+  const hold = sampleFrame(SEQ, states, 0.5, 0, P);          // 停留段
+  assert.equal(hold.seg.type, 'hold');
+  assert.ok(Math.abs(hold.soft - 0.12) < 1e-12, '停留段应为基准软边');
+  const transMid = sampleFrame(SEQ, states, 1 + 1.0, 0, P);  // 过渡段中点(t0=1,dur=2)
+  assert.equal(transMid.seg.type, 'trans');
+  assert.ok(transMid.soft > 0.12, '过渡中段软边应加宽');
 });
 
 test('采样器只在蒙版内落点', () => {

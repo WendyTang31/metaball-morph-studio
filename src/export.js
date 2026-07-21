@@ -24,7 +24,8 @@ export async function exportPNG(){
   for(let f=0;f<frames;f++){
     const g=f/P.fps;
     const fr=sampleFrame(store.SEQ, store.states, g, g, P);
-    renderToImageData(ectx,EW,EH,fr.balls,fr.col,P);
+    renderToImageData(ectx,EW,EH,fr.balls,fr.col,{...P, soft:fr.soft}); // 与预览同一有效软边
+    // (导出与预览共用 sampleFrame + 同一 soft,保证所见即所得)
     zip.file(`frame_${String(f).padStart(4,'0')}.png`, await toBlobP(ec));
     if(f%5===0){ setHint(`导出中 ${f+1}/${frames}…`); await nextFrame(); }
   }

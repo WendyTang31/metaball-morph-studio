@@ -45,14 +45,21 @@ export function makePairs(dotsA,dotsB,P){
 // 双正弦低频漂移:停留态的"呼吸",幅度极小(乘 P.amp)。
 export function drift(ph,time,P){return Math.sin(time*P.freq*6.283+ph)*.7+Math.sin(time*P.freq*3.33+ph*1.7)*.3;}
 
-// 过渡帧:每个点独立按错峰相位 p.d 延迟进入缓动,叠加双轴漂移。
+// 融合柔度膨胀:过渡中段(按段进度 t 的抛物线)整体放大点半径,端点复原=1。
+// 半径是比软边强得多的杠杆(场 ∝ r²,直接改变空间尺度),让结块更肉、化开羽化更宽。
+const FUSION_INFLATE = 0.6; // fusion=1 时中段半径最多膨胀 60%
+export function fusionInflate(P, t){
+  return 1 + (P.fusion||0) * FUSION_INFLATE * (4*t*(1-t));
+}
+
+// 过渡帧:每个点独立按错峰相位 p.d 延迟进入缓动,叠加双轴漂移;半径含融合膨胀。
 export function transBalls(pairs,t,time,P){
-  const ease=EASE[P.ease], span=Math.max(1e-6,1-P.stag);
+  const ease=EASE[P.ease], span=Math.max(1e-6,1-P.stag), inflate=fusionInflate(P,t);
   return pairs.map(p=>{
     const lt=Math.max(0,Math.min(1,(t-p.d*P.stag)/span)), e=ease(lt);
     return{x:p.a.x+(p.b.x-p.a.x)*e+P.amp*drift(p.phase,time,P),
            y:p.a.y+(p.b.y-p.a.y)*e+P.amp*drift(p.phase+3.1,time,P),
-           r:p.a.r+(p.b.r-p.a.r)*e};
+           r:(p.a.r+(p.b.r-p.a.r)*e)*inflate};
   });
 }
 
@@ -72,7 +79,16 @@ export function buildSequence(states, seamless, P){
   return {segs,T};
 }
 
-// 采样一帧:全局时间 g → {seg, balls, col}。预览与导出共用同一函数。
+// 融合柔度:突兀感来自"实体⇄点云"相变挤在极窄的软边带里发生。
+// 只在过渡段、按抛物线 4·lt·(1-lt) 在中段加宽渲染软边(端点归零,与停留态无缝衔接),
+// 让结块与化开都成为渐进"生长"而非硬切。P.fusion=0 即关闭,越大越柔。纯函数、确定性不破。
+const FUSION_MAX_SOFT = 0.5; // fusion=1 时中段最多把软边加宽这么多
+export function fusionSoft(P, lt){
+  return P.soft + (P.fusion||0) * FUSION_MAX_SOFT * (4*lt*(1-lt));
+}
+
+// 采样一帧:全局时间 g → {seg, balls, col, soft}。预览与导出共用同一函数。
+// soft = 该帧的"有效软边"(含融合柔度加成),渲染时用它覆盖 P.soft。
 export function sampleFrame(SEQ, states, g, time, P){
   const {segs,T}=SEQ;
   g=Math.max(0,Math.min(T-1e-6,g));
@@ -80,12 +96,12 @@ export function sampleFrame(SEQ, states, g, time, P){
   for(const s of segs){ if(g>=s.t0 && g<s.t0+s.dur){seg=s;break;} }
   if(seg.type==='hold'){
     const st=states[seg.si];
-    return {seg, col:hex2rgb(st.color),
+    return {seg, soft:P.soft, col:hex2rgb(st.color),
       balls:st.dots.map((b,i)=>({x:b.x+P.amp*drift(i*2.3,time,P),y:b.y+P.amp*drift(i*2.3+3,time,P),r:b.r}))};
   } else {
     const lt=(g-seg.t0)/seg.dur, ca=hex2rgb(states[seg.a].color), cb=hex2rgb(states[seg.b].color);
     const e=EASE.smoothstep(lt);
-    return {seg, balls:transBalls(seg.pairs,lt,time,P),
+    return {seg, soft:fusionSoft(P,lt), balls:transBalls(seg.pairs,lt,time,P),
       col:[ca[0]+(cb[0]-ca[0])*e, ca[1]+(cb[1]-ca[1])*e, ca[2]+(cb[2]-ca[2])*e]};
   }
 }
