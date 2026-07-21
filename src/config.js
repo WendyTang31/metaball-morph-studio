@@ -7,7 +7,7 @@ export const W = 480, H = 280;
 export const P = {
   sample:'hex', spacing:17, jitter:0, dotR:4.5,
   ease:'smootherstep', stag:0.3, amp:0.003, freq:0.4,
-  thr:1.1, soft:0.12, fusion:0.45, match:'sortXY',
+  thr:1.1, soft:0.12, match:'ot',
   tool:'rect', bool:'add', font:120,
   fps:30, gamma:1.0, fit:'stretch', colBg:'#0a0a0a'
 };

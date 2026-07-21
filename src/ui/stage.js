@@ -66,7 +66,7 @@ function tick(now){
       $('timeline').value=Math.round(store.g/store.SEQ.T*1000); }
     $('tVal').textContent=store.g.toFixed(1)+'s';
     const fr=sampleFrame(store.SEQ, store.states, store.g, store.clock, P);
-    previewRender(fr.balls, fr.col, {...P, soft:fr.soft}); // fr.soft 含融合柔度加成
+    previewRender(fr.balls, fr.col, P);
     overlayTraj(fr.balls, fr.seg); overlayFrameGuide();
   } else {
     const s=cur();

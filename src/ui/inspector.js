@@ -36,13 +36,12 @@ export function syncUI(){
   set('pSample',P.sample); set('pSpace',P.spacing); set('pJit',P.jitter); set('pDotR',P.dotR);
   set('pMatch',P.match); set('pEase',P.ease); set('pStag',P.stag); set('pAmp',P.amp);
   set('pThr',P.thr); set('pSoft',P.soft); set('pGamma',P.gamma); set('pFps',P.fps);
-  set('pFusion',P.fusion); set('expFit',P.fit); set('colBg',P.colBg); set('pFont',P.font);
+  set('pMatch',P.match); set('expFit',P.fit); set('colBg',P.colBg); set('pFont',P.font);
   $('vSpace').textContent=P.spacing; $('vJit').textContent=(+P.jitter).toFixed(1);
   $('vDotR').textContent=(+P.dotR).toFixed(1); $('vStag').textContent=(+P.stag).toFixed(2);
   $('vAmp').textContent='.'+Math.round(P.amp*1000).toString().padStart(3,'0');
   $('vThr').textContent=(+P.thr).toFixed(2); $('vSoft').textContent=(+P.soft).toFixed(2);
   $('vGamma').textContent=(+P.gamma).toFixed(2); $('vFps').textContent=P.fps;
-  $('vFusion').textContent=(+P.fusion).toFixed(2);
   $('vFont').textContent=P.font;
   $('boolBtn').textContent=P.bool==='add'?'➕':'➖';
 }
@@ -66,7 +65,6 @@ export function initInspector(){
   bind('pThr','thr','vThr',v=>v.toFixed(2));
   bind('pSoft','soft','vSoft',v=>v.toFixed(2));
   bind('pGamma','gamma','vGamma',v=>v.toFixed(2));
-  bind('pFusion','fusion','vFusion',v=>v.toFixed(2));
   bind('pFps','fps','vFps',v=>v);
   $('pSample').onchange=e=>{P.sample=e.target.value; resampleAll(); store.seqDirty=true;};
   $('pEase').onchange=e=>{P.ease=e.target.value; store.seqDirty=true;};
