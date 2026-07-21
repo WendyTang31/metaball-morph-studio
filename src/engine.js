@@ -49,36 +49,52 @@ export const MATCH={
   ot:(A,B)=>matchOT(A,B,60),
 };
 
-// 打散重合点(mass splitting):点数不等时补齐会把多点复制到同一位置,
-// 过渡到该状态时它们坍缩成黑块。这里把落在同一格的重复点按黄金角螺旋小幅散开,
-// 让每个点有独立位置 —— 视觉上"一个点裂成一小簇",而非多点挤成一团。
-function scatterDuplicates(pts){
-  const groups=new Map();
-  for(let i=0;i<pts.length;i++){
-    const k=Math.round(pts[i].x*4096)+','+Math.round(pts[i].y*4096);
-    let g=groups.get(k); if(!g){ g=[]; groups.set(k,g); } g.push(i);
+// 部分匹配(贪心最近邻、无放回):点数不等时,给较少一侧的每个点各配一个
+// "不重复占用"的较多一侧最近邻;配不上的那些多余点各自落单,交给调用方处理"生/灭"。
+// 这是应对点数不等的关键 —— 任何目标位置最多只被一个源点认领,
+// 从根源杜绝"多点抢同一个坑"式的坍缩黑块(mass-splitting 打散重合点治标不治本:
+// 散开后仍挤在融合半径内,反而制造更大的一坨)。
+function partialNearestMatch(small, big){
+  const nS=small.length, nB=big.length, used=new Array(nB).fill(false);
+  const matched=new Array(nS); // matched[i] = small[i] 认领的 big 索引
+  for(let i=0;i<nS;i++){
+    let best=-1,bd=Infinity;
+    for(let j=0;j<nB;j++){ if(used[j]) continue;
+      const d=(small[i].x-big[j].x)**2+(small[i].y-big[j].y)**2;
+      if(d<bd){bd=d;best=j;} }
+    used[best]=true; matched[i]=best;
   }
-  for(const g of groups.values()){
-    if(g.length<2) continue;
-    for(let j=1;j<g.length;j++){                    // 第一个留原位,其余螺旋散开
-      const p=pts[g[j]], ang=j*2.399963229, rad=p.r*1.6*Math.sqrt(j);
-      pts[g[j]]={x:p.x+Math.cos(ang)*rad, y:p.y+Math.sin(ang)*rad, r:p.r};
-    }
-  }
+  const excess=[]; for(let j=0;j<nB;j++) if(!used[j]) excess.push(j);
+  return {matched, excess};
 }
 
-// 配对:先用"最近邻复制"把点数补齐到相等,再打散重合点,最后按策略排序对齐;
-// p.d 是按 A 的 x 归一化的相位,供错峰(stagger)用。
+// 配对:点数相等时按策略整体排序对齐;点数不等时,重合部分走"部分最近邻匹配",
+// 多余的点原地"消亡"(r: 实际值→0)或原地"新生"(r: 0→实际值)—— 位置完全不挪动,
+// 只是渐显/渐隐,呼应"光生长"的美学纲领,同时彻底避免多点争抢同一目标造成的黑块。
+// p.d 是按 a.x 归一化的相位,供错峰(stagger)用。
 export function makePairs(dotsA,dotsB,P){
-  let A=dotsA.map(b=>({...b})), B=dotsB.map(b=>({...b}));
+  const A=dotsA.map(b=>({...b})), B=dotsB.map(b=>({...b}));
   if(!A.length||!B.length) return [];
-  const nearest=(arr,ref)=>{let best=arr[0],bd=1e9;
-    arr.forEach(b=>{const d=(b.x-ref.x)**2+(b.y-ref.y)**2;if(d<bd){bd=d;best=b;}});return best;};
-  while(A.length<B.length)A.push({...nearest(A,B[A.length%B.length])});
-  while(B.length<A.length)B.push({...nearest(B,A[B.length%A.length])});
-  scatterDuplicates(A); scatterDuplicates(B);       // 消除坍缩:重复点各自散开
-  const [sa,sb]=MATCH[P.match](A,B);
-  const pairs=sa.map((a,i)=>({a,b:sb[i],phase:Math.random()*6.28,d:0}));
+  let pairs;
+  if(A.length===B.length){
+    const [sa,sb]=MATCH[P.match](A,B);
+    pairs=sa.map((a,i)=>({a,b:sb[i],phase:Math.random()*6.28,d:0}));
+  } else {
+    const aIsSmall=A.length<B.length;
+    const small=aIsSmall?A:B, big=aIsSmall?B:A;
+    const {matched,excess}=partialNearestMatch(small,big);
+    pairs=matched.map((bi,i)=>{
+      const s=small[i], g=big[bi];
+      return {a:aIsSmall?s:g, b:aIsSmall?g:s, phase:Math.random()*6.28, d:0};
+    });
+    for(const bi of excess){
+      const p=big[bi], phantom={x:p.x,y:p.y,r:0};
+      // aIsSmall: big=B 多出 → B 侧原地新生;否则 big=A 多出 → A 侧原地消亡。
+      pairs.push(aIsSmall
+        ? {a:phantom, b:p, phase:Math.random()*6.28, d:0}
+        : {a:p, b:phantom, phase:Math.random()*6.28, d:0});
+    }
+  }
   const xs=pairs.map(p=>p.a.x),mn=Math.min(...xs),mx=Math.max(...xs);
   pairs.forEach(p=>p.d=(mx-mn)<1e-6?0:(p.a.x-mn)/(mx-mn));
   return pairs;

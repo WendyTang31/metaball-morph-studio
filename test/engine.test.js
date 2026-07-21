@@ -45,7 +45,7 @@ test('无缝关闭时无尾→首过渡', () => {
   assert.ok(!SEQ.segs.some(s => s.type === 'trans' && s.a === 1 && s.b === 0), '不应有尾→首过渡');
 });
 
-test('配对补齐:点数不等时两侧对齐到同长', () => {
+test('配对数等于较多一侧点数(多余点以幽灵配对占位)', () => {
   const A = [{ x: .1, y: .1, r: .01 }, { x: .2, y: .2, r: .01 }, { x: .3, y: .3, r: .01 }];
   const B = [{ x: .8, y: .8, r: .01 }];
   const pairs = makePairs(A, B, P);
@@ -69,15 +69,36 @@ test('sampleFrame 在过渡端点落回 A/B 位置(错峰=0 时)', () => {
   P.stag = savedStag; P.amp = savedAmp;
 });
 
-test('mass splitting:点数不等时补齐点被打散,无坍缩(终点互异)', () => {
-  const A = [];
-  for (let i = 0; i < 6; i++) A.push({ x: 0.15 + i * 0.1, y: 0.3, r: 0.02 });
-  const B = [{ x: 0.2, y: 0.7, r: 0.02 }, { x: 0.5, y: 0.7, r: 0.02 }, { x: 0.8, y: 0.7, r: 0.02 }];
+test('部分匹配:点数不等时,较少一侧全部配对到互异目标,多余点原地生/灭', () => {
+  const A = []; for (let i = 0; i < 6; i++) A.push({ x: 0.15 + i * 0.1, y: 0.3, r: 0.02 }); // 6(多,应有消亡)
+  const B = [{ x: 0.2, y: 0.7, r: 0.02 }, { x: 0.5, y: 0.7, r: 0.02 }, { x: 0.8, y: 0.7, r: 0.02 }]; // 3(少)
   const pairs = makePairs(A, B, { match: 'ot' });
-  assert.equal(pairs.length, 6, '应补齐到较多一侧');
-  const key = p => Math.round(p.x * 4096) + ',' + Math.round(p.y * 4096);
-  const ends = new Set(pairs.map(p => key(p.b)));
-  assert.equal(ends.size, 6, '6 个源点应有 6 个互异终点(坍缩已被打散)');
+  assert.equal(pairs.length, 6, '应有 max(6,3)=6 对');
+
+  const real = pairs.filter(p => p.a.r > 0 && p.b.r > 0);   // 真·真配对(部分匹配命中)
+  const ghost = pairs.filter(p => p.a.r === 0 || p.b.r === 0); // 消亡/新生(含一端幽灵)
+  assert.equal(real.length, 3, '应有 min(6,3)=3 对真实配对');
+  assert.equal(ghost.length, 3, '应有 3 个多余点原地生/灭');
+
+  // 核心不变量:任何一个真实目标位置最多被一个真实源点认领 —— 不再有"多点抢同一个坑"
+  const key = p => p.x.toFixed(6) + ',' + p.y.toFixed(6);
+  const claimedTargets = real.map(p => key(p.b));
+  assert.equal(new Set(claimedTargets).size, claimedTargets.length, '真实目标不应被重复认领');
+
+  // 消亡/新生点必须原地不动(只改变半径),不参与任何形式的位移
+  for (const p of ghost) {
+    assert.ok(Math.abs(p.a.x - p.b.x) < 1e-9 && Math.abs(p.a.y - p.b.y) < 1e-9, '生/灭点应原地不动');
+    assert.ok(p.a.r === 0 || p.b.r === 0, '生/灭点一端半径必为 0');
+  }
+});
+
+test('部分匹配:反方向(A 少 B 多)时,多余点在 B 侧新生', () => {
+  const A = [{ x: 0.2, y: 0.7, r: 0.02 }, { x: 0.5, y: 0.7, r: 0.02 }, { x: 0.8, y: 0.7, r: 0.02 }]; // 3(少)
+  const B = []; for (let i = 0; i < 6; i++) B.push({ x: 0.15 + i * 0.1, y: 0.3, r: 0.02 }); // 6(多,应新生)
+  const pairs = makePairs(A, B, { match: 'ot' });
+  const ghost = pairs.filter(p => p.a.r === 0 || p.b.r === 0);
+  assert.equal(ghost.length, 3, '应有 3 个多余点原地新生');
+  for (const p of ghost) assert.equal(p.a.r, 0, 'A 更少时,多余点应是 B 侧新生(a 端为幽灵)');
 });
 
 test('OT 配对总位移不明显劣于排序匹配(等点数)', () => {
