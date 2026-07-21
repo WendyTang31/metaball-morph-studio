@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Metaball Morph Studio · v4</title>
+<style>
+  :root{ --bg:#0a0a0a; --panel:#161616; --line:#2a2a2a; --ink:#e8e8e4; --dim:#8a8a85; --mint:#98f5d0; }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{ background:var(--bg); color:var(--ink);
+        font-family:"IBM Plex Sans","Helvetica Neue",system-ui,sans-serif;
+        display:flex; flex-direction:column; align-items:center; padding:14px; gap:10px;}
+  .topbar{ width:min(1280px,96vw); display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+  .topbar h1{font-size:14px; font-weight:600; letter-spacing:.05em; margin-right:6px;}
+  .topbar h1 span{color:var(--dim); font-weight:400; font-size:11px; margin-left:6px;}
+  .spacer{flex:1}
+  /* ── 状态胶片条 ── */
+  .strip{ width:min(1280px,96vw); display:flex; gap:8px; align-items:center;
+          background:var(--panel); border:1px solid var(--line); border-radius:8px;
+          padding:8px 10px; overflow-x:auto;}
+  .chip{ display:flex; flex-direction:column; gap:3px; cursor:pointer; flex:0 0 auto;
+         border:1px solid var(--line); border-radius:7px; padding:4px; background:#101010;}
+  .chip.active{border-color:var(--mint);}
+  .chip canvas{width:96px; height:56px; border-radius:4px; display:block; background:#000;}
+  .chip .nm{font-size:10.5px; color:var(--dim); text-align:center; max-width:96px;
+            overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .chip.active .nm{color:var(--mint);}
+  .chip .arrow{font-size:14px; color:var(--dim);}
+  .arrow{font-size:14px; color:var(--dim);}
+  .stripbtn{flex:0 0 auto;}
+  .main{ width:min(1280px,96vw); display:flex; gap:10px; align-items:stretch; flex-wrap:wrap;}
+  .toolbar{ display:flex; flex-direction:column; gap:6px; background:var(--panel);
+            border:1px solid var(--line); border-radius:8px; padding:8px 6px;}
+  .toolbar button{width:38px; height:34px; font-size:14px; padding:0;}
+  .toolbar .gap{height:8px}
+  .center{flex:1; min-width:340px; display:flex; flex-direction:column; gap:8px;}
+  .stage{position:relative; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:#000;}
+  canvas#cv{display:block; width:100%; aspect-ratio:480/280; cursor:crosshair;}
+  .hint{position:absolute; left:10px; bottom:8px; font-size:11px; color:var(--dim); pointer-events:none; max-width:92%;}
+  .tlbar{ background:var(--panel); border:1px solid var(--line); border-radius:8px;
+          padding:8px 12px; display:flex; align-items:center; gap:9px;}
+  .props{ width:292px; background:var(--panel); border:1px solid var(--line); border-radius:8px;
+          padding:10px 12px; display:flex; flex-direction:column; gap:8px;
+          max-height:660px; overflow-y:auto;}
+  .props::-webkit-scrollbar{width:6px} .props::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+  .sec{font-size:10.5px; color:var(--dim); letter-spacing:.12em; margin-top:4px;}
+  .row{display:flex; align-items:center; gap:7px; flex-wrap:wrap;}
+  .row label{font-size:11.5px; color:var(--dim); min-width:56px;}
+  .row .val{font-size:11px; color:var(--mint); min-width:34px; text-align:right; font-variant-numeric:tabular-nums;}
+  input[type=range]{flex:1; accent-color:var(--mint); height:18px; min-width:60px;}
+  input[type=text]{background:#1e1e1e; color:var(--ink); border:1px solid var(--line); border-radius:6px;
+                   padding:4px 8px; font-size:12px; width:90px; font-family:inherit;}
+  input[type=color]{width:34px; height:24px; border:1px solid var(--line); border-radius:5px;
+                    background:#1e1e1e; padding:1px; cursor:pointer;}
+  select,button{ background:#1e1e1e; color:var(--ink); border:1px solid var(--line);
+                 border-radius:6px; padding:5px 8px; font-size:12px; cursor:pointer; font-family:inherit;}
+  button:hover{border-color:var(--mint); color:var(--mint);}
+  button.active{background:var(--mint); color:#000; border-color:var(--mint);}
+  .divider{height:1px; background:var(--line); margin:2px 0;}
+  .small{font-size:10.5px; color:var(--dim); line-height:1.5;}
+  .selbox{border:1px dashed var(--line); border-radius:6px; padding:7px 8px; display:flex;
+          flex-direction:column; gap:6px; font-size:11.5px;}
+  input[type=checkbox]{accent-color:var(--mint)}
+  .ck{font-size:11px; color:var(--ink); display:flex; gap:4px; align-items:center; min-width:auto}
+</style>
+</head>
+<body>
+
+<!-- ═══ 顶栏 ═══ -->
+<div class="topbar">
+  <h1>MORPH STUDIO <span>v4 · 序列状态机 · ALIAS</span></h1>
+  <button id="mPlay">▶ 预览序列</button>
+  <div class="spacer"></div>
+  <button id="clearGrp">清空当前状态</button>
+  <button id="clearAll">🗑 全部</button>
+  <button id="copyBtn">复制点集</button>
+  <button id="saveBtn">💾 保存工程</button>
+  <button id="openBtn">📂 打开工程</button>
+  <input type="file" id="openFile" accept=".json" style="display:none">
+</div>
+
+<!-- ═══ 状态胶片条(点击缩略图 = 编辑该状态)═══ -->
+<div class="strip" id="strip"></div>
+
+<div class="main">
+
+  <!-- 左:工具条 -->
+  <div class="toolbar">
+    <button id="tSel" title="选择/移动/缩放 (V)">➤</button>
+    <button id="tRect" class="active" title="矩形 (R)">▭</button>
+    <button id="tEll" title="椭圆 (E)">◯</button>
+    <button id="tText" title="文字 (T)">T</button>
+    <button id="tDot" title="单点 (D)">・</button>
+    <div class="gap"></div>
+    <button id="boolBtn" title="新形状:添加/挖除">➕</button>
+  </div>
+
+  <!-- 中:画布 + 时间轴 -->
+  <div class="center">
+    <div class="stage">
+      <canvas id="cv" width="480" height="280"></canvas>
+      <div class="hint" id="hint">点上方缩略图选状态编辑;▶ 预览整条序列</div>
+    </div>
+    <div class="tlbar">
+      <button id="playBtn">▶ 播放</button>
+      <input type="range" id="timeline" min="0" max="1000" value="0">
+      <div class="val" id="tVal">0.0s</div>
+      <label class="ck"><input type="checkbox" id="loop" checked> 循环</label>
+      <label class="ck"><input type="checkbox" id="seamless" checked> 无缝(尾→首)</label>
+    </div>
+  </div>
+
+  <!-- 右:属性栏 -->
+  <div class="props">
+
+    <div class="sec">当前状态</div>
+    <div class="row"><label>名称</label><input type="text" id="stName" style="flex:1"></div>
+    <div class="row">
+      <label>颜色</label><input type="color" id="stColor" value="#98f5d0">
+      <label style="min-width:auto">背景</label><input type="color" id="colBg" value="#0a0a0a">
+    </div>
+    <div class="row"><label>停留 (秒)</label><input type="range" id="stHold" min="0" max="5" step="0.1" value="1"><div class="val" id="vHold">1.0</div></div>
+    <div class="row"><label>过渡 (秒)</label><input type="range" id="stDur" min="0.5" max="8" step="0.1" value="3"><div class="val" id="vDur">3.0</div></div>
+    <div class="row">
+      <button id="stLeft" title="前移">←</button>
+      <button id="stRight" title="后移">→</button>
+      <button id="stDup" style="flex:1">⧉ 复制</button>
+      <button id="stDel" style="flex:1">删除状态</button>
+    </div>
+
+    <div class="divider"></div>
+    <div class="sec">选中对象</div>
+    <div class="selbox" id="selBox"><span class="small">（未选中 — ➤ 工具点击形状）</span></div>
+
+    <div class="divider"></div>
+    <div class="sec">文字工具</div>
+    <div class="row">
+      <input type="text" id="txtWord" value="GO">
+      <label style="min-width:auto">字号</label>
+      <input type="range" id="pFont" min="30" max="220" value="120"><div class="val" id="vFont">120</div>
+    </div>
+
+    <div class="divider"></div>
+    <div class="sec">② 采样</div>
+    <div class="row"><label>方式</label>
+      <select id="pSample" style="flex:1">
+        <option value="grid">方格网格</option>
+        <option value="hex" selected>六角网格</option>
+        <option value="poisson">泊松盘·蓝噪声</option>
+        <option value="outline">仅轮廓</option>
+      </select></div>
+    <div class="row"><label>点间距</label><input type="range" id="pSpace" min="8" max="44" value="17"><div class="val" id="vSpace">17</div></div>
+    <div class="row"><label>抖动</label><input type="range" id="pJit" min="0" max="1" step="0.05" value="0"><div class="val" id="vJit">0.0</div></div>
+    <div class="row"><label>点半径</label><input type="range" id="pDotR" min="1.5" max="12" step="0.5" value="4.5"><div class="val" id="vDotR">4.5</div></div>
+    <div class="small" id="cnt"></div>
+
+    <div class="divider"></div>
+    <div class="sec">③ 引擎(全局)</div>
+    <div class="row"><label>匹配</label>
+      <select id="pMatch" style="flex:1">
+        <option value="sortXY" selected>排序匹配</option>
+        <option value="angle">角度排序</option>
+        <option value="greedy">贪心最近邻</option>
+        <option value="random">随机(对照)</option>
+      </select></div>
+    <div class="row"><label>缓动</label>
+      <select id="pEase" style="flex:1">
+        <option value="linear">linear</option>
+        <option value="smoothstep">smoothstep</option>
+        <option value="smootherstep" selected>smootherstep</option>
+        <option value="cubic">easeInOutCubic</option>
+      </select></div>
+    <div class="row"><label>错峰</label><input type="range" id="pStag" min="0" max="1" step="0.01" value="0.3"><div class="val" id="vStag">0.30</div></div>
+    <div class="row"><label>噪声</label><input type="range" id="pAmp" min="0" max="0.015" step="0.0005" value="0.003"><div class="val" id="vAmp">.003</div></div>
+
+    <div class="divider"></div>
+    <div class="sec">④ 渲染</div>
+    <div class="row"><label>融合阈值</label><input type="range" id="pThr" min="0.4" max="3" step="0.05" value="1.1"><div class="val" id="vThr">1.10</div></div>
+    <div class="row"><label>边缘柔度</label><input type="range" id="pSoft" min="0.01" max="0.6" step="0.01" value="0.12"><div class="val" id="vSoft">0.12</div></div>
+    <div class="row"><label>Gamma</label><input type="range" id="pGamma" min="0.5" max="2.6" step="0.05" value="1.0"><div class="val" id="vGamma">1.00</div></div>
+    <div class="row">
+      <label class="ck"><input type="checkbox" id="showTraj"> 轨迹</label>
+      <label class="ck"><input type="checkbox" id="showOnion" checked> 洋葱皮</label>
+      <label class="ck"><input type="checkbox" id="showFrame" checked> 画幅线</label>
+    </div>
+
+    <div class="divider"></div>
+    <div class="sec">⑤ 导出</div>
+    <div class="row"><label>预设</label>
+      <select id="expPreset" style="flex:1">
+        <option value="480,280">当前画布 480×280</option>
+        <option value="768,64">LED 6模组横排 768×64</option>
+        <option value="384,128" selected>LED 6模组 3×2 384×128</option>
+        <option value="2560,64">LED 20模组横排 2560×64</option>
+        <option value="1920,1080">高清 1920×1080</option>
+        <option value="custom">自定义…</option>
+      </select></div>
+    <div class="row">
+      <input type="text" id="expW" value="384" style="width:52px"> ×
+      <input type="text" id="expH" value="128" style="width:52px">
+      <select id="expFit">
+        <option value="stretch" selected>拉伸填满</option>
+        <option value="fit">等比留黑</option>
+      </select>
+    </div>
+    <div class="row"><label>帧率</label><input type="range" id="pFps" min="10" max="60" step="1" value="30"><div class="val" id="vFps">30</div></div>
+    <div class="row">
+      <button id="recBtn" style="flex:1">⏺ 录 WebM</button>
+      <button id="pngBtn" style="flex:1">🎞 PNG 序列</button>
+    </div>
+    <div class="small">导出整条序列(勾"无缝"含尾→首过渡,循环播放天衣无缝)。
+      PNG → <span style="color:var(--mint)">ffmpeg -framerate 30 -i frame_%04d.png -pix_fmt yuv420p out.mp4</span></div>
+  </div>
+</div>
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

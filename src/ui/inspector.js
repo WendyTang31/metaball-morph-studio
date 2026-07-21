@@ -1,0 +1,107 @@
+// 右属性栏:当前状态属性、选中对象、文字工具、采样/引擎/渲染/导出参数。
+// 这里是"参数 UI → P"的唯一写入口;改完置脏或重采样,渲染循环下一帧自然吃到。
+import { P } from '../config.js';
+import { store, cur } from '../store.js';
+import { $, setHint } from '../utils.js';
+import { pushUndo, makeState } from '../state.js';
+import { rasterize, resample, resampleAll, updateThumb, tintGhost, shapesChanged } from '../pipeline.js';
+import { renderStrip, setActive, syncStateUI } from './filmstrip.js';
+import { exportPNG, toggleRecord } from '../export.js';
+
+// ── 选中对象小面板 ──
+export function updateSelBox(){
+  const box=$('selBox'); const sel=store.sel;
+  if(!sel){ box.innerHTML='<span class="small">（未选中 — ➤ 工具点击形状）</span>'; return; }
+  const name={rect:'矩形',ellipse:'椭圆',text:`文字 "${sel.text}"`}[sel.type];
+  box.innerHTML=`<div>${name} · ${Math.round(sel.w)}×${Math.round(sel.h)}</div>
+    <div style="display:flex;gap:6px">
+      <button id="selBool" style="flex:1">${sel.bool==='add'?'➕ 添加':'➖ 挖除'}</button>
+      <button id="selDel" style="flex:1">删除 (Del)</button>
+    </div>`;
+  $('selBool').onclick=()=>{ pushUndo(); sel.bool=sel.bool==='add'?'sub':'add';
+    updateSelBox(); shapesChanged(cur()); };
+  $('selDel').onclick=deleteSel;
+}
+export function deleteSel(){
+  if(!store.sel||store.mode==='play') return;
+  pushUndo();
+  const s=cur(), i=s.shapes.indexOf(store.sel);
+  if(i>=0) s.shapes.splice(i,1);
+  store.sel=null; updateSelBox(); shapesChanged(s);
+}
+
+// ── 参数 UI 回填(打开工程后同步滑块/下拉显示)──
+export function syncUI(){
+  const set=(id,v)=>{const el=$(id); if(el)el.value=v;};
+  set('pSample',P.sample); set('pSpace',P.spacing); set('pJit',P.jitter); set('pDotR',P.dotR);
+  set('pMatch',P.match); set('pEase',P.ease); set('pStag',P.stag); set('pAmp',P.amp);
+  set('pThr',P.thr); set('pSoft',P.soft); set('pGamma',P.gamma); set('pFps',P.fps);
+  set('expFit',P.fit); set('colBg',P.colBg); set('pFont',P.font);
+  $('vSpace').textContent=P.spacing; $('vJit').textContent=(+P.jitter).toFixed(1);
+  $('vDotR').textContent=(+P.dotR).toFixed(1); $('vStag').textContent=(+P.stag).toFixed(2);
+  $('vAmp').textContent='.'+Math.round(P.amp*1000).toString().padStart(3,'0');
+  $('vThr').textContent=(+P.thr).toFixed(2); $('vSoft').textContent=(+P.soft).toFixed(2);
+  $('vGamma').textContent=(+P.gamma).toFixed(2); $('vFps').textContent=P.fps;
+  $('vFont').textContent=P.font;
+  $('boolBtn').textContent=P.bool==='add'?'➕':'➖';
+}
+
+// 滑块 → P 通用绑定。rs=true 的参数改动会触发全体重采样 + 缩略图刷新。
+function bind(id,key,valId,fmt,rs){
+  $(id).addEventListener('input',e=>{ P[key]=parseFloat(e.target.value);
+    if(valId)$(valId).textContent=fmt(P[key]);
+    if(rs){resampleAll(); store.states.forEach(updateThumb);} store.seqDirty=true; });
+}
+
+export function initInspector(){
+  // 采样参数(改动需重采样)
+  bind('pSpace','spacing','vSpace',v=>v,true);
+  bind('pJit','jitter','vJit',v=>v.toFixed(1),true);
+  bind('pDotR','dotR','vDotR',v=>v.toFixed(1),true);
+  bind('pFont','font','vFont',v=>v);
+  // 引擎/渲染参数(只需置脏)
+  bind('pStag','stag','vStag',v=>v.toFixed(2));
+  bind('pAmp','amp','vAmp',v=>'.'+Math.round(v*1000).toString().padStart(3,'0'));
+  bind('pThr','thr','vThr',v=>v.toFixed(2));
+  bind('pSoft','soft','vSoft',v=>v.toFixed(2));
+  bind('pGamma','gamma','vGamma',v=>v.toFixed(2));
+  bind('pFps','fps','vFps',v=>v);
+  $('pSample').onchange=e=>{P.sample=e.target.value; resampleAll(); store.seqDirty=true;};
+  $('pEase').onchange=e=>{P.ease=e.target.value; store.seqDirty=true;};
+  $('pMatch').onchange=e=>{P.match=e.target.value; store.seqDirty=true;};
+  $('expFit').onchange=e=>P.fit=e.target.value;
+  $('colBg').addEventListener('input',e=>P.colBg=e.target.value);
+  $('seamless').onchange=()=>{store.seqDirty=true;};
+  $('expPreset').onchange=e=>{
+    if(e.target.value==='custom') return;
+    const [w,h]=e.target.value.split(',');
+    $('expW').value=w; $('expH').value=h; };
+  ['expW','expH'].forEach(id=>$(id).addEventListener('input',()=>{$('expPreset').value='custom';}));
+  $('pngBtn').onclick=exportPNG;
+  $('recBtn').onclick=toggleRecord;
+
+  // ── 当前状态属性 ──
+  $('stName').addEventListener('input',e=>{ cur().name=e.target.value||'未命名'; renderStrip(); });
+  $('stColor').addEventListener('input',e=>{ cur().color=e.target.value;
+    tintGhost(cur()); updateThumb(cur()); store.seqDirty=true; });
+  $('stHold').addEventListener('input',e=>{ cur().hold=parseFloat(e.target.value);
+    $('vHold').textContent=cur().hold.toFixed(1); store.seqDirty=true; });
+  $('stDur').addEventListener('input',e=>{ cur().dur=parseFloat(e.target.value);
+    $('vDur').textContent=cur().dur.toFixed(1); store.seqDirty=true; });
+  $('stDup').onclick=()=>{ pushUndo();
+    const s=cur(), c=makeState(s.name+' 副本', s.color);
+    Object.assign(c,{hold:s.hold, dur:s.dur,
+      shapes:JSON.parse(JSON.stringify(s.shapes)), manual:JSON.parse(JSON.stringify(s.manual))});
+    store.states.splice(store.active+1,0,c); rasterize(c); resample(c);
+    setActive(store.active+1); renderStrip(); };
+  $('stDel').onclick=()=>{ if(store.states.length<=1){setHint('至少保留一个状态');return;}
+    pushUndo(); store.states.splice(store.active,1);
+    store.active=Math.min(store.active,store.states.length-1);
+    setActive(store.active); renderStrip(); store.seqDirty=true; };
+  $('stLeft').onclick=()=>{ if(store.active===0)return; pushUndo();
+    [store.states[store.active-1],store.states[store.active]]=[store.states[store.active],store.states[store.active-1]];
+    store.active--; renderStrip(); syncStateUI(); store.seqDirty=true; };
+  $('stRight').onclick=()=>{ if(store.active>=store.states.length-1)return; pushUndo();
+    [store.states[store.active],store.states[store.active+1]]=[store.states[store.active+1],store.states[store.active]];
+    store.active++; renderStrip(); syncStateUI(); store.seqDirty=true; };
+}

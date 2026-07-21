@@ -1,0 +1,21 @@
+// 通用小工具。都是浏览器侧无状态帮手,唯一副作用集中在 DOM 读取,
+// 但只在被调用时才碰 document,因此纯函数模块(engine/render/samplers)引它也安全。
+import { W, H } from './config.js';
+
+export const $ = id => document.getElementById(id);
+export const hex2rgb = h => [parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
+export const FONT = s => `900 ${s}px system-ui, "PingFang SC", sans-serif`;
+
+// 底部提示行。集中一个入口,免得各模块到处缓存 hint 元素。
+export const setHint = msg => { const el=$('hint'); if(el) el.textContent=msg; };
+
+export const downloadBlob = (blob,name)=>{ const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download=name; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),5000); };
+export const toBlobP = c => new Promise(res=>c.toBlob(res,'image/png'));
+export const nextFrame = () => new Promise(res=>requestAnimationFrame(res));
+
+// 导出目标尺寸:下限 16px,非法输入回退到画布尺寸。
+export function getExpSize(){
+  return [Math.max(16,parseInt($('expW').value)||W), Math.max(16,parseInt($('expH').value)||H)];
+}
