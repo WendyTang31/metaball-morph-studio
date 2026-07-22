@@ -5,6 +5,30 @@ import { EASE, buildSequence, makePairs, sampleFrame } from '../src/engine.js';
 import { SAMPLERS } from '../src/samplers.js';
 import { P } from '../src/config.js';
 
+test('呼吸漂移在停留↔过渡边界连续,无相位跳变(回归:曾用 index/random 两套相位公式)', () => {
+  const localP = { amp: 0.01, stag: 0.3, ease: 'smootherstep', freq: 0.4, match: 'sortXY' }; // amp 放大以放大任何跳变
+  const states = [
+    { hold: 1, dur: 2, color: '#ffffff', dots: [{ x: .2, y: .3, r: .02 }, { x: .35, y: .6, r: .02 }] },
+    { hold: 1, dur: 2, color: '#ffffff', dots: [{ x: .7, y: .4, r: .02 }, { x: .8, y: .2, r: .02 }] },
+  ];
+  const SEQ = buildSequence(states, false, localP); // [holdA(1), trans(2), holdB(1)]
+  const eps = 1e-4, time = 7.777; // 任取一个墙钟时刻
+  // 边界①:holdA 结束 → 过渡刚开始(e≈0),几何位置本就该重合,只有漂移可能跳变
+  const beforeTrans = sampleFrame(SEQ, states, 1 - eps, time, localP);
+  const afterTrans = sampleFrame(SEQ, states, 1 + eps, time, localP);
+  for (let i = 0; i < beforeTrans.balls.length; i++) {
+    const d = Math.hypot(beforeTrans.balls[i].x - afterTrans.balls[i].x, beforeTrans.balls[i].y - afterTrans.balls[i].y);
+    assert.ok(d < 1e-3, `holdA→过渡边界不应跳变,点${i}位移=${d}`);
+  }
+  // 边界②:过渡结束(e≈1)→ holdB 开始
+  const beforeHoldB = sampleFrame(SEQ, states, 3 - eps, time, localP);
+  const afterHoldB = sampleFrame(SEQ, states, 3 + eps, time, localP);
+  for (let i = 0; i < beforeHoldB.balls.length; i++) {
+    const d = Math.hypot(beforeHoldB.balls[i].x - afterHoldB.balls[i].x, beforeHoldB.balls[i].y - afterHoldB.balls[i].y);
+    assert.ok(d < 1e-3, `过渡→holdB边界不应跳变,点${i}位移=${d}`);
+  }
+});
+
 test('缓动端点连续:每种 ease 都满足 f(0)=0, f(1)=1', () => {
   for (const name of Object.keys(EASE)) {
     assert.ok(Math.abs(EASE[name](0) - 0) < 1e-9, `${name}(0) 应为 0`);

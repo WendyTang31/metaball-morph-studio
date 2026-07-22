@@ -9,6 +9,11 @@ export const EASE={ linear:t=>t, smoothstep:t=>t*t*(3-2*t),
 
 const centroid=a=>{let x=0,y=0;a.forEach(b=>{x+=b.x;y+=b.y;});return{x:x/a.length,y:y/a.length};};
 
+// 位置确定的呼吸漂移相位(而非随机数或数组下标):同一坐标永远得到同一相位。
+// 这是消除"每个状态出入两次小错位"的关键 —— 停留态和过渡态的端点用的是同一个点的
+// 同一个坐标,只要相位公式只依赖坐标,两边算出来的相位就天然一致、边界处零跳变。
+function dotPhase(x,y){ const s=Math.sin(x*127.1+y*311.7)*43758.5453; return (s-Math.floor(s))*6.283185307; }
+
 // Sliced Optimal Transport 配对:沿多个方向反复做 1D 排序对齐(1D 排序即该方向的最优传输),
 // 迭代逼近 2D 最优传输,得到总位移最小、保邻域的 A↔B 映射 —— 点如流体般各走最短路、
 // 不交叉、不在中途挤成团。这是 procedural morph 平滑的关键,取代易聚集的最近邻类匹配。
@@ -78,23 +83,26 @@ export function makePairs(dotsA,dotsB,P){
   let pairs;
   if(A.length===B.length){
     const [sa,sb]=MATCH[P.match](A,B);
-    pairs=sa.map((a,i)=>({a,b:sb[i],phase:Math.random()*6.28,d:0}));
+    pairs=sa.map((a,i)=>({a,b:sb[i],d:0}));
   } else {
     const aIsSmall=A.length<B.length;
     const small=aIsSmall?A:B, big=aIsSmall?B:A;
     const {matched,excess}=partialNearestMatch(small,big);
     pairs=matched.map((bi,i)=>{
       const s=small[i], g=big[bi];
-      return {a:aIsSmall?s:g, b:aIsSmall?g:s, phase:Math.random()*6.28, d:0};
+      return {a:aIsSmall?s:g, b:aIsSmall?g:s, d:0};
     });
     for(const bi of excess){
       const p=big[bi], phantom={x:p.x,y:p.y,r:0};
       // aIsSmall: big=B 多出 → B 侧原地新生;否则 big=A 多出 → A 侧原地消亡。
       pairs.push(aIsSmall
-        ? {a:phantom, b:p, phase:Math.random()*6.28, d:0}
-        : {a:p, b:phantom, phase:Math.random()*6.28, d:0});
+        ? {a:phantom, b:p, d:0}
+        : {a:p, b:phantom, d:0});
     }
   }
+  // 每对预存两端的位置相位(见 dotPhase):过渡时按 e 在两者间插值,
+  // 端点(e=0/1)与相邻停留态严丝合缝 —— 消亡/新生对 a、b 同位置,phaseA===phaseB,自动稳定。
+  pairs.forEach(p=>{ p.phaseA=dotPhase(p.a.x,p.a.y); p.phaseB=dotPhase(p.b.x,p.b.y); });
   const xs=pairs.map(p=>p.a.x),mn=Math.min(...xs),mx=Math.max(...xs);
   pairs.forEach(p=>p.d=(mx-mn)<1e-6?0:(p.a.x-mn)/(mx-mn));
   return pairs;
@@ -104,12 +112,16 @@ export function makePairs(dotsA,dotsB,P){
 export function drift(ph,time,P){return Math.sin(time*P.freq*6.283+ph)*.7+Math.sin(time*P.freq*3.33+ph*1.7)*.3;}
 
 // 过渡帧:每个点独立按错峰相位 p.d 延迟进入缓动,叠加双轴漂移。
+// 漂移相位在 phaseA(=离开时的停留相位)与 phaseB(=到达时的停留相位)间按同一个 e 插值,
+// e=0/1 时分别精确退化为源/目标停留态的相位 —— 与相邻停留段严丝合缝,无跳变。
 export function transBalls(pairs,t,time,P){
   const ease=EASE[P.ease], span=Math.max(1e-6,1-P.stag);
   return pairs.map(p=>{
     const lt=Math.max(0,Math.min(1,(t-p.d*P.stag)/span)), e=ease(lt);
-    return{x:p.a.x+(p.b.x-p.a.x)*e+P.amp*drift(p.phase,time,P),
-           y:p.a.y+(p.b.y-p.a.y)*e+P.amp*drift(p.phase+3.1,time,P),
+    const dxA=drift(p.phaseA,time,P), dxB=drift(p.phaseB,time,P);
+    const dyA=drift(p.phaseA+3.1,time,P), dyB=drift(p.phaseB+3.1,time,P);
+    return{x:p.a.x+(p.b.x-p.a.x)*e+P.amp*(dxA+(dxB-dxA)*e),
+           y:p.a.y+(p.b.y-p.a.y)*e+P.amp*(dyA+(dyB-dyA)*e),
            r:p.a.r+(p.b.r-p.a.r)*e};
   });
 }
@@ -139,7 +151,8 @@ export function sampleFrame(SEQ, states, g, time, P){
   if(seg.type==='hold'){
     const st=states[seg.si];
     return {seg, col:hex2rgb(st.color),
-      balls:st.dots.map((b,i)=>({x:b.x+P.amp*drift(i*2.3,time,P),y:b.y+P.amp*drift(i*2.3+3,time,P),r:b.r}))};
+      balls:st.dots.map(b=>{ const ph=dotPhase(b.x,b.y);
+        return {x:b.x+P.amp*drift(ph,time,P), y:b.y+P.amp*drift(ph+3.1,time,P), r:b.r}; })};
   } else {
     const lt=(g-seg.t0)/seg.dur, ca=hex2rgb(states[seg.a].color), cb=hex2rgb(states[seg.b].color);
     const e=EASE.smoothstep(lt);
