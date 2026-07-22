@@ -5,6 +5,7 @@ import { P } from './config.js';
 import { store } from './store.js';
 import { $, FONT, hex2rgb } from './utils.js';
 import { SAMPLERS } from './samplers.js';
+import { fillSmoothClosedPath } from './path.js';
 
 // 蒙版读取器:白(>127)= 形状内。
 export function readMask(s){ const d=s.mctx.getImageData(0,0,W,H).data;
@@ -24,6 +25,7 @@ export function rasterize(s){
     if(sh.type==='rect') c.fillRect(sh.x,sh.y,sh.w,sh.h);
     else if(sh.type==='ellipse'){ c.beginPath();
       c.ellipse(sh.x+sh.w/2,sh.y+sh.h/2,sh.w/2,sh.h/2,0,0,7); c.fill(); }
+    else if(sh.type==='path'){ if(fillSmoothClosedPath(c,sh.points)) c.fill(); }
     else { c.font=FONT(sh.h); c.textAlign='center'; c.textBaseline='middle';
       c.fillText(sh.text, sh.x+sh.w/2, sh.y+sh.h/2); }
   }

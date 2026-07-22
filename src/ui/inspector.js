@@ -12,7 +12,8 @@ import { exportPNG, toggleRecord } from '../export.js';
 export function updateSelBox(){
   const box=$('selBox'); const sel=store.sel;
   if(!sel){ box.innerHTML='<span class="small">（未选中 — ➤ 工具点击形状）</span>'; return; }
-  const name={rect:'矩形',ellipse:'椭圆',text:`文字 "${sel.text}"`}[sel.type];
+  const name={rect:'矩形',ellipse:'椭圆',text:`文字 "${sel.text}"`,
+    path:`自由轮廓 · ${sel.points?.length||0} 个锚点(双击线段加点/双击手柄删点)`}[sel.type];
   box.innerHTML=`<div>${name} · ${Math.round(sel.w)}×${Math.round(sel.h)}</div>
     <div style="display:flex;gap:6px">
       <button id="selBool" style="flex:1">${sel.bool==='add'?'➕ 添加':'➖ 挖除'}</button>
