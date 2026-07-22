@@ -13,8 +13,13 @@ export function updateSelBox(){
   const box=$('selBox'); const sel=store.sel;
   if(!sel){ box.innerHTML='<span class="small">（未选中 — ➤ 工具点击形状）</span>'; return; }
   const name={rect:'矩形',ellipse:'椭圆',text:`文字 "${sel.text}"`,
-    path:`自由轮廓 · ${sel.points?.length||0} 个锚点(双击线段加点/双击手柄删点)`}[sel.type];
+    path:`自由轮廓 · ${sel.points?.length||0} 个锚点(双击线段加点/双击手柄删点)`,
+    image:`图片蒙版${sel.useAlpha?' · 按透明通道':' · 按亮度'}`}[sel.type];
+  const imgCtrls = sel.type==='image' ? `
+    <div class="row"><label>阈值</label><input type="range" id="selThr" min="0" max="255" value="${sel.threshold}"><div class="val" id="vSelThr">${sel.threshold}</div></div>
+    <label class="ck"><input type="checkbox" id="selInvert" ${sel.invert?'checked':''}> 反相</label>` : '';
   box.innerHTML=`<div>${name} · ${Math.round(sel.w)}×${Math.round(sel.h)}</div>
+    ${imgCtrls}
     <div style="display:flex;gap:6px">
       <button id="selBool" style="flex:1">${sel.bool==='add'?'➕ 添加':'➖ 挖除'}</button>
       <button id="selDel" style="flex:1">删除 (Del)</button>
@@ -22,6 +27,11 @@ export function updateSelBox(){
   $('selBool').onclick=()=>{ pushUndo(); sel.bool=sel.bool==='add'?'sub':'add';
     updateSelBox(); shapesChanged(cur()); };
   $('selDel').onclick=deleteSel;
+  if(sel.type==='image'){
+    $('selThr').addEventListener('input',e=>{ sel.threshold=+e.target.value;
+      $('vSelThr').textContent=sel.threshold; shapesChanged(cur()); });
+    $('selInvert').addEventListener('change',e=>{ sel.invert=e.target.checked; shapesChanged(cur()); });
+  }
 }
 export function deleteSel(){
   if(!store.sel||store.mode==='play') return;

@@ -4,6 +4,7 @@ import { W, H, P } from './config.js';
 import { store, cur } from './store.js';
 import { setHint, downloadBlob } from './utils.js';
 import { rasterize, resample } from './pipeline.js';
+import { decodeImageShape } from './image.js';
 import { renderStrip, syncStateUI } from './ui/filmstrip.js';
 import { updateSelBox, syncUI } from './ui/inspector.js';
 import { setMode } from './ui/stage.js';
@@ -39,6 +40,18 @@ export function hydrate(data){
   store.sel=null; updateSelBox();
   store.states.forEach(s=>{rasterize(s); resample(s);});
   renderStrip(); syncStateUI(); store.seqDirty=true;
+  reviveImageShapes();
+}
+
+// 图片形状的 _img(解码好的 <img>)是运行时缓存,JSON 往返(工程打开/撤销/重做)后会丢失
+// 只留 imgDataURL。这里异步补解码,完了针对受影响的状态再刷一遍光栅化/采样 —— 因为按 dataURL
+// 缓存(见 image.js),多数情况下命中缓存、近乎瞬时,肉眼很难察觉这次"补一帧"。
+function reviveImageShapes(){
+  const pending=[];
+  for(const s of store.states) for(const sh of s.shapes)
+    if(sh.type==='image' && !sh._img)
+      pending.push(decodeImageShape(sh).then(()=>{ rasterize(s); resample(s); }));
+  if(pending.length) Promise.all(pending).then(()=>{ renderStrip(); store.seqDirty=true; });
 }
 export function undo(){ if(!store.undoStack.length){setHint('没有可撤销的步骤');return;}
   store.redoStack.push(snapshot()); hydrate(store.undoStack.pop());

@@ -6,6 +6,7 @@ import { store } from './store.js';
 import { $, FONT, hex2rgb } from './utils.js';
 import { SAMPLERS } from './samplers.js';
 import { fillSmoothClosedPath } from './path.js';
+import { binarize } from './image.js';
 
 // 蒙版读取器:白(>127)= 形状内。
 export function readMask(s){ const d=s.mctx.getImageData(0,0,W,H).data;
@@ -26,6 +27,17 @@ export function rasterize(s){
     else if(sh.type==='ellipse'){ c.beginPath();
       c.ellipse(sh.x+sh.w/2,sh.y+sh.h/2,sh.w/2,sh.h/2,0,0,7); c.fill(); }
     else if(sh.type==='path'){ if(fillSmoothClosedPath(c,sh.points)) c.fill(); }
+    else if(sh.type==='image'){
+      if(!sh._img) continue; // 尚未解码完成(工程刚打开/撤销刚发生),跳过这一帧,解码完会再刷一次
+      const tw=Math.max(1,Math.round(sh.w)), th=Math.max(1,Math.round(sh.h));
+      const tmp=document.createElement('canvas'); tmp.width=tw; tmp.height=th;
+      const tctx=tmp.getContext('2d',{willReadFrequently:true});
+      tctx.drawImage(sh._img,0,0,tw,th);
+      const id=tctx.getImageData(0,0,tw,th);
+      binarize(id.data,{threshold:sh.threshold, invert:sh.invert, useAlpha:sh.useAlpha, addColor255:sh.bool==='add'});
+      tctx.putImageData(id,0,0);
+      c.drawImage(tmp, sh.x, sh.y); // 外部像素已置透明,drawImage 天然只覆盖"内部"区域(见 binarize 注释)
+    }
     else { c.font=FONT(sh.h); c.textAlign='center'; c.textBaseline='middle';
       c.fillText(sh.text, sh.x+sh.w/2, sh.y+sh.h/2); }
   }

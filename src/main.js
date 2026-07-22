@@ -8,6 +8,7 @@ import { renderStrip, syncStateUI } from './ui/filmstrip.js';
 import { syncUI, updateSelBox, initInspector } from './ui/inspector.js';
 import { initToolbar } from './ui/toolbar.js';
 import { initStage, setMode, startLoop } from './ui/stage.js';
+import { importImageFile } from './ui/imageImport.js';
 
 // ── 顶栏:组操作 + 工程 ──
 function initTopbar(){
@@ -29,6 +30,11 @@ function initTopbar(){
     const rd=new FileReader();
     rd.onload=()=>loadProject(JSON.parse(rd.result));
     rd.readAsText(f); e.target.value='';
+  });
+  $('importImgBtn').onclick=()=>$('importImgFile').click();
+  $('importImgFile').addEventListener('change',e=>{
+    const f=e.target.files[0]; if(!f) return;
+    importImageFile(f); e.target.value='';
   });
 }
 
