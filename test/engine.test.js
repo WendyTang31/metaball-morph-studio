@@ -138,14 +138,38 @@ test('OT 配对总位移不明显劣于排序匹配(等点数)', () => {
 test('采样器只在蒙版内落点', () => {
   // 蒙版:中心 200x120 矩形为"内"
   const on = (x, y) => x >= 140 && x <= 340 && y >= 80 && y <= 200;
-  for (const name of ['grid', 'hex', 'poisson', 'outline']) {
+  for (const name of ['grid', 'hex', 'poisson', 'uniform', 'outline']) {
     const pts = SAMPLERS[name](on, 17, 0);
     assert.ok(pts.length > 0, `${name} 应产出点`);
-    // 允许 outline 落在边缘像素,放宽 2px 容差
+    // 允许 outline/uniform 落在边缘像素(松弛质心可能贴边),放宽 2px 容差
     for (const [x, y] of pts) {
       assert.ok(on(Math.round(x), Math.round(y)) ||
         (x >= 138 && x <= 342 && y >= 78 && y <= 202),
         `${name} 点 (${x|0},${y|0}) 落到蒙版外`);
     }
   }
+});
+
+test('均匀填充(Lloyd 松弛)比原始泊松盘间距方差更小,即真的更均匀', () => {
+  // 用一个不规则的 L 形蒙版(比矩形更贴近真实文字/图形笔画),重复几次取最优,
+  // 避免泊松盘自身的随机性偶然赢一次导致测试不稳定。
+  const on = (x, y) => (x >= 60 && x <= 300 && y >= 60 && y <= 120) ||
+                        (x >= 60 && x <= 140 && y >= 60 && y <= 220);
+  const nnVariance = pts => {
+    const d = pts.map(([x, y]) => {
+      let best = Infinity;
+      for (const [x2, y2] of pts) { if (x === x2 && y === y2) continue;
+        const dd = (x - x2) ** 2 + (y - y2) ** 2; if (dd < best) best = dd; }
+      return Math.sqrt(best);
+    });
+    const mean = d.reduce((a, b) => a + b, 0) / d.length;
+    return d.reduce((a, b) => a + (b - mean) ** 2, 0) / d.length;
+  };
+  let poissonWins = 0;
+  for (let trial = 0; trial < 3; trial++) {
+    const varPoisson = nnVariance(SAMPLERS.poisson(on, 14));
+    const varUniform = nnVariance(SAMPLERS.uniform(on, 14));
+    if (varPoisson <= varUniform) poissonWins++;
+  }
+  assert.ok(poissonWins < 3, 'uniform 至少应有一轮明显比 poisson 更均匀(方差更小)');
 });

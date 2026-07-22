@@ -45,4 +45,48 @@ export const SAMPLERS = {
         const pi=grid[ny*gc+nx];
         if(pi>=0){ const p=pts[pi]; if((p[0]-x)**2+(p[1]-y)**2<minD*minD) ok=false; } }
       if(ok){ grid[cy*gc+cx]=pts.length; pts.push([x,y]); } } return pts; },
+  // 均匀填充(Lloyd 松弛):poisson 铺种子后,反复把每个点挪到"它负责的蒙版像素"的
+  // 质心 —— 这是离散版 Voronoi/CVT,让点间距趋于一致,不再有局部扎堆或稀疏。
+  // 网格加速最近点查找(思路同 render.js 的 tile 分块),避免逐点逐像素的 O(n·像素) 暴力法。
+  uniform(on,sp,jit){
+    const pts=SAMPLERS.poisson(on,sp).map(p=>[...p]);
+    if(pts.length<2) return pts;
+    return lloydRelax(on,pts,5);
+  },
 };
+
+function lloydRelax(on,pts,iters){
+  const n=pts.length;
+  const cell=Math.max(4,Math.sqrt((W*H)/n)); // 网格边长按点密度取,平均每格约一个点
+  // 硬性时间预算:无论蒙版多病态(文字这类多连通块、细笔画、大片空白最容易触发退化到
+  // O(n) 兜底查找的情形),都不可能拖垮交互 —— 超时就停在已完成的迭代上优雅退化。
+  const deadline=performance.now()+250;
+  for(let it=0;it<iters;it++){
+    if(performance.now()>deadline) break;
+    const gc=Math.max(1,Math.ceil(W/cell)), gr=Math.max(1,Math.ceil(H/cell));
+    const bins=Array.from({length:gc*gr},()=>[]);
+    for(let i=0;i<n;i++){
+      const cx=Math.min(gc-1,(pts[i][0]/cell)|0), cy=Math.min(gr-1,(pts[i][1]/cell)|0);
+      bins[cy*gc+cx].push(i);
+    }
+    const sx=new Float64Array(n), sy=new Float64Array(n), cnt=new Int32Array(n);
+    for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+      if(!on(x,y)) continue;
+      const cx=Math.min(gc-1,(x/cell)|0), cy=Math.min(gr-1,(y/cell)|0);
+      let best=-1,bd=Infinity;
+      for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+        const nx=cx+dx, ny=cy+dy;
+        if(nx<0||ny<0||nx>=gc||ny>=gr) continue;
+        for(const i of bins[ny*gc+nx]){
+          const ddx=pts[i][0]-x, ddy=pts[i][1]-y, d=ddx*ddx+ddy*ddy;
+          if(d<bd){bd=d;best=i;}
+        }
+      }
+      if(best<0) for(let i=0;i<n;i++){ // 3x3 邻域内恰好没点(极端稀疏)时的兜底
+        const ddx=pts[i][0]-x, ddy=pts[i][1]-y, d=ddx*ddx+ddy*ddy; if(d<bd){bd=d;best=i;} }
+      sx[best]+=x; sy[best]+=y; cnt[best]++;
+    }
+    for(let i=0;i<n;i++) if(cnt[i]>0) pts[i]=[sx[i]/cnt[i], sy[i]/cnt[i]];
+  }
+  return pts;
+}
